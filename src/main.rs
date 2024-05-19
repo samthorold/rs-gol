@@ -1,4 +1,8 @@
-use std::{env, fmt};
+use std::{
+    env, fmt,
+    fs::File,
+    io::{self, BufReader, Read},
+};
 
 #[derive(Clone, Debug)]
 enum Cell {
@@ -16,24 +20,21 @@ impl fmt::Display for Cell {
 }
 
 struct Board {
-    w: usize,
+    size: usize,
     n: usize,
     cells: Vec<Cell>,
 }
 
 impl Board {
-    fn new(cells: &str) -> Self {
-        let w = (cells.len() as f64).sqrt() as usize;
-        let mut cs = Vec::new();
-        for c in cells.chars() {
-            cs.push(match c {
-                '.' => Cell::Dead,
-                'o' => Cell::Alive,
-                _ => panic!("Unknown cell value. Must be 'o' or '.'."),
-            });
+    fn new(initial_state: Vec<Cell>, size: usize, pos: (usize, usize)) -> Self {
+        // let mut cs = Vec::new();
+        let n = initial_state.len();
+        let size = (n as f32).sqrt() as usize;
+        Self {
+            size,
+            cells: initial_state,
+            n,
         }
-        let n = cs.len();
-        Self { w, cells: cs, n }
     }
 
     fn next_board(&mut self) {
@@ -70,10 +71,10 @@ impl Board {
         // tl, tc, tr
         // cl, .., cr
         // bl, bc, br
-        let is_top_row = i < self.w;
-        let is_bottom_row = i >= (self.n - self.w);
-        let is_left_col = (i % self.w) == 0;
-        let is_right_col = (i >= (self.w - 1)) && (((i + 1) % self.w) == 0);
+        let is_top_row = i < self.size;
+        let is_bottom_row = i >= (self.n - self.size);
+        let is_left_col = (i % self.size) == 0;
+        let is_right_col = (i >= (self.size - 1)) && (((i + 1) % self.size) == 0);
 
         // println!(
         //     "{} {} {} {} {}",
@@ -84,49 +85,63 @@ impl Board {
             (true, true, true, true) => Vec::new(),
             (true, true, true, false) => vec![i + 1],
             (true, true, false, true) => vec![i - 1],
-            (true, false, true, true) => vec![i + self.w],
-            (false, true, true, true) => vec![i - self.w],
+            (true, false, true, true) => vec![i + self.size],
+            (false, true, true, true) => vec![i - self.size],
             (true, true, false, false) => vec![i - 1, i + 1],
-            (true, false, false, true) => vec![i - 1, i + self.w - 1, i + self.w],
+            (true, false, false, true) => vec![i - 1, i + self.size - 1, i + self.size],
             (true, false, true, false) => vec![
                 // me
                 i + 1,
-                i + self.w,
-                i + self.w + 1,
+                i + self.size,
+                i + self.size + 1,
             ],
-            (false, true, true, false) => vec![i - self.w, i - self.w + 1, i + 1],
-            (false, true, false, true) => vec![i - self.w - 1, i - self.w, i - self.w + 1, i - 1],
-            (false, false, true, true) => vec![i - self.w, i + self.w],
+            (false, true, true, false) => vec![i - self.size, i - self.size + 1, i + 1],
+            (false, true, false, true) => {
+                vec![i - self.size - 1, i - self.size, i - self.size + 1, i - 1]
+            }
+            (false, false, true, true) => vec![i - self.size, i + self.size],
 
             (true, false, false, false) => {
-                vec![i - 1, i + 1, i + self.w - 1, i + self.w, i + self.w + 1]
+                vec![
+                    i - 1,
+                    i + 1,
+                    i + self.size - 1,
+                    i + self.size,
+                    i + self.size + 1,
+                ]
             }
             (false, true, false, false) => {
-                vec![i - self.w - 1, i - self.w, i - self.w + 1, i - 1, i + 1]
+                vec![
+                    i - self.size - 1,
+                    i - self.size,
+                    i - self.size + 1,
+                    i - 1,
+                    i + 1,
+                ]
             }
             (false, false, true, false) => vec![
-                i - self.w,
-                i - self.w + 1,
+                i - self.size,
+                i - self.size + 1,
                 i + 1,
-                i + self.w,
-                i + self.w + 1,
+                i + self.size,
+                i + self.size + 1,
             ],
             (false, false, false, true) => vec![
-                i - self.w - 1,
-                i - self.w,
+                i - self.size - 1,
+                i - self.size,
                 i - 1,
-                i + self.w - 1,
-                i + self.w,
+                i + self.size - 1,
+                i + self.size,
             ],
             (false, false, false, false) => vec![
-                i - self.w - 1,
-                i - self.w,
-                i - self.w + 1,
+                i - self.size - 1,
+                i - self.size,
+                i - self.size + 1,
                 i - 1,
                 i + 1,
-                i + self.w - 1,
-                i + self.w,
-                i + self.w + 1,
+                i + self.size - 1,
+                i + self.size,
+                i + self.size + 1,
             ],
         }
     }
@@ -136,7 +151,7 @@ impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "\n")?;
         for (i, cell) in self.cells.iter().enumerate() {
-            if (i > 0) && (i % self.w == 0) {
+            if (i > 0) && (i % self.size == 0) {
                 writeln!(f)?;
             }
             write!(f, "{}", cell)?;
@@ -145,14 +160,52 @@ impl fmt::Display for Board {
     }
 }
 
+fn read_file_contents(path: &str) -> io::Result<String> {
+    let file = File::open(path)?;
+    let mut buf_reader = BufReader::new(file);
+    let mut contents = String::new();
+    buf_reader.read_to_string(&mut contents)?;
+    Ok(contents)
+}
+
+fn read_life_105(path: &str) -> Vec<Cell> {
+    let contents = match read_file_contents(path) {
+        Ok(contents) => contents,
+        Err(_) => panic!("Could not open file {}.", path),
+    };
+    let mut cells = Vec::new();
+    for line in contents.lines() {
+        if line.starts_with("#") {
+            continue;
+        }
+        for ch in line.chars() {
+            match ch {
+                '.' => cells.push(Cell::Dead),
+                '*' => cells.push(Cell::Alive),
+                _ => panic!("Only '.' and '*' are valid non-comment characters."),
+            };
+        }
+    }
+    cells
+}
+
 fn main() {
     println!("Game of Life");
 
     let args: Vec<String> = env::args().collect();
 
-    let s: &str = &args[1];
+    let path: &str = &args[1];
+    let size: &str = &args[2];
+    let pos_str: &str = &args[3];
+    let mut pos = Vec::new();
+    for p in pos_str.split(",") {
+        pos.push(p.parse().unwrap())
+    }
 
-    let mut board = Board::new(s);
+    println!("{} {} {:#?}", path, size, pos);
+    let cells = read_life_105(path);
+
+    let mut board = Board::new(cells, size.parse().unwrap(), (pos[0], pos[1]));
 
     for _ in 0..5 {
         println!("{}", board);
