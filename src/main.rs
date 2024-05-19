@@ -14,8 +14,8 @@ enum Cell {
 impl fmt::Display for Cell {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let symbol = match self {
-            Cell::Alive => 'o',
-            Cell::Dead => '.',
+            Cell::Alive => '0',
+            Cell::Dead => ' ',
         };
         write!(f, "{}", symbol)
     }
@@ -28,22 +28,29 @@ struct Board {
 }
 
 impl Board {
-    fn new(initial_state: Vec<Cell>, size: usize, pos: (usize, usize)) -> Self {
-        // size = 10, pos = (3, 3)
-        let x = pos.0;
-        let y = pos.1;
+    fn new(
+        initial_state: Vec<Cell>,
+        initial_size: (usize, usize),
+        end_size: (usize, usize),
+        end_pos: (usize, usize),
+    ) -> Self {
+        let initial_width = initial_size.0;
+        let initial_height = initial_size.1;
+        let end_width = end_size.0;
+        let end_height = end_size.1;
+        let x = end_pos.0;
+        let y = end_pos.1;
         let mut cs = Vec::new();
         if y > 0 {
             for _ in 0..y {
-                for _ in 0..size {
+                for _ in 0..end_width {
                     cs.push(Cell::Dead);
                 }
             }
         }
-        let initial_size = (initial_state.len() as f32).sqrt() as usize;
         for (i, cell) in initial_state.into_iter().enumerate() {
-            let is_left_col = (i % initial_size) == 0;
-            let is_right_col = (i >= (initial_size - 1)) && (((i + 1) % initial_size) == 0);
+            let is_left_col = (i % initial_width) == 0;
+            let is_right_col = (i >= (initial_width - 1)) && (((i + 1) % initial_width) == 0);
             // if new row, add x dead cells
             if is_left_col {
                 for _ in 0..x {
@@ -54,18 +61,18 @@ impl Board {
             cs.push(cell);
             // if end of row, add (size - x - initial_size) dead cells
             if is_right_col {
-                for _ in 0..(size - x - initial_size) {
+                for _ in 0..(end_width - x - initial_width) {
                     cs.push(Cell::Dead);
                 }
             }
         }
-        for _ in 0..(size - initial_size) {
-            for _ in 0..size {
+        for _ in 0..(end_height - y - initial_height) {
+            for _ in 0..end_width {
                 cs.push(Cell::Dead);
             }
         }
         Self {
-            size,
+            size: end_width,
             cells: cs.clone(),
             n: cs.len(),
         }
@@ -202,25 +209,32 @@ fn read_file_contents(path: &str) -> io::Result<String> {
     Ok(contents)
 }
 
-fn read_life_105(path: &str) -> Vec<Cell> {
+fn read_plaintext(path: &str) -> (Vec<Cell>, (usize, usize)) {
     let contents = match read_file_contents(path) {
         Ok(contents) => contents,
         Err(_) => panic!("Could not open file {}.", path),
     };
     let mut cells = Vec::new();
-    for line in contents.lines() {
-        if line.starts_with("#") {
+    let mut height: usize = 0;
+    let mut width: usize = 0;
+    for l in contents.lines() {
+        let line = l.trim();
+        if line.starts_with("#") || line.starts_with("!") {
             continue;
         }
+        height += 1;
+        width = line.len();
         for ch in line.chars() {
             match ch {
                 '.' => cells.push(Cell::Dead),
                 '*' => cells.push(Cell::Alive),
-                _ => panic!("Only '.' and '*' are valid non-comment characters."),
+                'o' => cells.push(Cell::Alive),
+                'O' => cells.push(Cell::Alive),
+                _ => panic!("Only '.', '*', and 'o' are valid non-comment characters."),
             };
         }
     }
-    cells
+    (cells, (width, height))
 }
 
 fn main() {
@@ -237,13 +251,15 @@ fn main() {
     }
 
     // println!("{} {} {:#?}", path, size, pos);
-    let initial_state = read_life_105(path);
+    let board_info = read_plaintext(path);
+    let initial_state = board_info.0;
+    let initial_size = board_info.1;
 
-    let mut board = Board::new(initial_state, size, (pos[0], pos[1]));
+    let mut board = Board::new(initial_state, initial_size, (size, size), (pos[0], pos[1]));
 
-    for _ in 0..25 {
+    for _ in 0..1_000 {
         println!("{}", board);
-        sleep(Duration::from_millis(500));
+        sleep(Duration::from_millis(100));
         board.next_board();
     }
     println!("{}", board);
