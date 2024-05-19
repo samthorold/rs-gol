@@ -2,6 +2,8 @@ use std::{
     env, fmt,
     fs::File,
     io::{self, BufReader, Read},
+    thread::sleep,
+    time::Duration,
 };
 
 #[derive(Clone, Debug)]
@@ -27,13 +29,45 @@ struct Board {
 
 impl Board {
     fn new(initial_state: Vec<Cell>, size: usize, pos: (usize, usize)) -> Self {
-        // let mut cs = Vec::new();
-        let n = initial_state.len();
-        let size = (n as f32).sqrt() as usize;
+        // size = 10, pos = (3, 3)
+        let x = pos.0;
+        let y = pos.1;
+        let mut cs = Vec::new();
+        if y > 0 {
+            for _ in 0..y {
+                for _ in 0..size {
+                    cs.push(Cell::Dead);
+                }
+            }
+        }
+        let initial_size = (initial_state.len() as f32).sqrt() as usize;
+        for (i, cell) in initial_state.into_iter().enumerate() {
+            let is_left_col = (i % initial_size) == 0;
+            let is_right_col = (i >= (initial_size - 1)) && (((i + 1) % initial_size) == 0);
+            // if new row, add x dead cells
+            if is_left_col {
+                for _ in 0..x {
+                    cs.push(Cell::Dead);
+                }
+            }
+            // add initial cell
+            cs.push(cell);
+            // if end of row, add (size - x - initial_size) dead cells
+            if is_right_col {
+                for _ in 0..(size - x - initial_size) {
+                    cs.push(Cell::Dead);
+                }
+            }
+        }
+        for _ in 0..(size - initial_size) {
+            for _ in 0..size {
+                cs.push(Cell::Dead);
+            }
+        }
         Self {
             size,
-            cells: initial_state,
-            n,
+            cells: cs.clone(),
+            n: cs.len(),
         }
     }
 
@@ -195,20 +229,21 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let path: &str = &args[1];
-    let size: &str = &args[2];
+    let size: usize = args[2].parse().unwrap();
     let pos_str: &str = &args[3];
     let mut pos = Vec::new();
     for p in pos_str.split(",") {
         pos.push(p.parse().unwrap())
     }
 
-    println!("{} {} {:#?}", path, size, pos);
-    let cells = read_life_105(path);
+    // println!("{} {} {:#?}", path, size, pos);
+    let initial_state = read_life_105(path);
 
-    let mut board = Board::new(cells, size.parse().unwrap(), (pos[0], pos[1]));
+    let mut board = Board::new(initial_state, size, (pos[0], pos[1]));
 
-    for _ in 0..5 {
+    for _ in 0..25 {
         println!("{}", board);
+        sleep(Duration::from_millis(500));
         board.next_board();
     }
     println!("{}", board);
