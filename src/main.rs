@@ -237,6 +237,85 @@ fn read_plaintext(path: &str) -> (Vec<Cell>, (usize, usize)) {
     (cells, (width, height))
 }
 
+fn read_rle(path: &str) -> (Vec<Cell>, (usize, usize)) {
+    let contents = match read_file_contents(path) {
+        Ok(contents) => contents,
+        Err(_) => panic!("Could not open file {}.", path),
+    };
+    let mut cells = Vec::new();
+    let mut height: usize = 0;
+    let mut width: usize = 0;
+    let mut have_read_size = false;
+    for l in contents.lines() {
+        let line = l.trim();
+        if line.starts_with("#") {
+            continue;
+        }
+        // assume all files have the x = ..., y = ..., ... line
+        if !have_read_size {
+            for meta in l.split(",") {
+                println!("{}", meta);
+                match meta.trim().chars().nth(0).unwrap() {
+                    'x' => {
+                        let value_str: Vec<&str> = meta.split("=").collect();
+                        width = value_str[1].trim().parse().unwrap();
+                        println!("{}", width);
+                    }
+                    'y' => {
+                        let value_str: Vec<&str> = meta.split("=").collect();
+                        height = value_str[1].trim().parse().unwrap();
+                        println!("{}", height);
+                    }
+                    _ => {}
+                }
+            }
+            have_read_size = true;
+        } else {
+            if (width == 0) || (height == 0) {
+                panic!(
+                    "Something has gone wrong. Width = {}, height = {}",
+                    width, height
+                )
+            }
+            let mut count_str = String::new();
+            let mut line_width: usize = 0;
+            for ch in line.chars() {
+                match ch {
+                    '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => count_str.push(ch),
+                    '$' => {
+                        println!("New line {} {}", width, line_width);
+                        for _ in 0..(width - line_width) {
+                            cells.push(Cell::Dead);
+                        }
+                        line_width = 0;
+                        // count_str = String::new();
+                    }
+                    'b' | 'o' => {
+                        let cell_value = match ch {
+                            'b' => Cell::Dead,
+                            'o' => Cell::Alive,
+                            _ => panic!("Unclear how we got here."),
+                        };
+                        if count_str.is_empty() {
+                            count_str = String::from("1")
+                        }
+                        let count: usize = count_str.parse().unwrap();
+                        for _ in 0..count {
+                            cells.push(cell_value.clone());
+                        }
+                        count_str = String::new();
+                        line_width += count;
+                        println!("Cell run {:#?} {} {}", cell_value, count, line_width);
+                    }
+                    '!' => {}
+                    _ => panic!("Unknown symbol {}", ch),
+                }
+            }
+        }
+    }
+    (cells, (width, height))
+}
+
 fn main() {
     println!("Game of Life");
 
@@ -251,7 +330,11 @@ fn main() {
     }
 
     // println!("{} {} {:#?}", path, size, pos);
-    let board_info = read_plaintext(path);
+    let board_info = if path.ends_with(".rle") {
+        read_rle(path)
+    } else {
+        read_plaintext(path)
+    };
     let initial_state = board_info.0;
     let initial_size = board_info.1;
 
